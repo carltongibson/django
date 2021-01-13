@@ -123,13 +123,13 @@ class TokenGeneratorTest(TestCase):
         new_secret = 'abcdefghijkl'
         # Create and check a token with a different secret.
         p0 = PasswordResetTokenGenerator()
-        p0.secret = new_secret
+        p0.secrets = [new_secret]
         tk0 = p0.make_token(user)
         self.assertIs(p0.check_token(user, tk0), True)
         # Create and check a token with the default secret.
         p1 = PasswordResetTokenGenerator()
-        self.assertEqual(p1.secret, settings.SECRET_KEY)
-        self.assertNotEqual(p1.secret, new_secret)
+        self.assertEqual(p1.secrets[0], settings.SECRET_KEYS[0])
+        self.assertNotEqual(p1.secrets[0], new_secret)
         tk1 = p1.make_token(user)
         # Tokens created with a different secret don't validate.
         self.assertIs(p0.check_token(user, tk1), False)
@@ -159,7 +159,7 @@ class TokenGeneratorTest(TestCase):
         user = User.objects.create_user('tokentestuser', 'test2@example.com', 'testpw')
 
         p1 = PasswordResetTokenGenerator()
-        p1.secret = 'secret'
+        p1.secrets = ['secret']
 
         p2 = PasswordResetTokenGenerator()
         p2.secrets = ['newsecret', 'secret']

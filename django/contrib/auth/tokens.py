@@ -1,7 +1,6 @@
 from datetime import datetime, time
 
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
 from django.utils.crypto import constant_time_compare, salted_hmac
 from django.utils.http import base36_to_int, int_to_base36
 
@@ -13,42 +12,20 @@ class PasswordResetTokenGenerator:
     """
     key_salt = "django.contrib.auth.tokens.PasswordResetTokenGenerator"
     algorithm = None
-    _secret = None
     secrets = None
 
     def __init__(self):
         # RemovedInDjango40Warning: when the deprecation ends, replace with:
         # self.algorithm = self.algorithm or 'sha256'
         self.algorithm = self.algorithm or settings.DEFAULT_HASHING_ALGORITHM
-
-    # This is WIP. Needs some tests at least.
-    # Idea is needing to allow the setter on .secret, whilst lazily reading from
-    # SECRET_KEYS.
-    @property
-    def secret(self):
-        return self._secret or self._get_secrets()[0]
-
-    @secret.setter
-    def secret(self, value):
-        self._secret = value
-
-    def _get_secrets(self):
-        if self._secret is not None:
-            if self.secrets is not None:
-                raise ImproperlyConfigured('Both secret and secrets can not be specified on {}'.format(self.__class__))
-
-            return [self.secret]
-        elif self.secrets is not None:
-            return self.secrets
-
-        return settings.SECRET_KEYS
+        self.secrets = self.secrets or settings.SECRET_KEYS
 
     def make_token(self, user):
         """
         Return a token that can be used once to do a password reset
         for the given user.
         """
-        return self._make_token_with_timestamp(user, self._num_seconds(self._now()), self._get_secrets()[0])
+        return self._make_token_with_timestamp(user, self._num_seconds(self._now()), self.secrets[0])
 
     def check_token(self, user, token):
         """
@@ -72,7 +49,7 @@ class PasswordResetTokenGenerator:
         # Check that the timestamp/uid has not been tampered with
         attempts = [
             constant_time_compare(self._make_token_with_timestamp(user, ts, secret), token)
-            for secret in self._get_secrets()
+            for secret in self.secrets
         ]
         if not any(attempts):
             # RemovedInDjango40Warning: when the deprecation ends, replace
@@ -82,7 +59,7 @@ class PasswordResetTokenGenerator:
                 constant_time_compare(
                     self._make_token_with_timestamp(user, ts, secret, legacy=True),
                     token
-                ) for secret in self._get_secrets()
+                ) for secret in self.secrets
             ]
             if not any(legacy_attempts):
                 return False
