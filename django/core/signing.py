@@ -41,9 +41,7 @@ import zlib
 
 from django.conf import settings
 from django.utils import baseconv
-from django.utils.crypto import (
-    constant_time_any, constant_time_compare, salted_hmac,
-)
+from django.utils.crypto import constant_time_compare, salted_hmac
 from django.utils.encoding import force_bytes
 from django.utils.module_loading import import_string
 from django.utils.regex_helper import _lazy_re_compile
@@ -199,7 +197,7 @@ class Signer:
                 constant_time_compare(sig, self._legacy_signature(value, key))
             ) for key in self.keys
         ]
-        if constant_time_any(attempts):
+        if any(attempts):
             return value
         raise BadSignature('Signature "%s" does not match' % sig)
 

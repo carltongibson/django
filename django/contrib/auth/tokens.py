@@ -2,9 +2,7 @@ from datetime import datetime, time
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.utils.crypto import (
-    constant_time_any, constant_time_compare, salted_hmac,
-)
+from django.utils.crypto import constant_time_compare, salted_hmac
 from django.utils.http import base36_to_int, int_to_base36
 
 
@@ -76,7 +74,7 @@ class PasswordResetTokenGenerator:
             constant_time_compare(self._make_token_with_timestamp(user, ts, secret), token)
             for secret in self._get_secrets()
         ]
-        if not constant_time_any(attempts):
+        if not any(attempts):
             # RemovedInDjango40Warning: when the deprecation ends, replace
             # with:
             #   return False
@@ -86,7 +84,7 @@ class PasswordResetTokenGenerator:
                     token
                 ) for secret in self._get_secrets()
             ]
-            if not constant_time_any(legacy_attempts):
+            if not any(legacy_attempts):
                 return False
 
         # RemovedInDjango40Warning: convert days to seconds and round to
