@@ -399,7 +399,7 @@ class CheckSecretKeyTest(SimpleTestCase):
         SECRET_KEY=base.SECRET_KEY_INSECURE_PREFIX + get_random_secret_key()
     )
     def test_insecure_secret_key(self):
-        self.assertEqual(base.check_secret_key(None), [base.W009])
+        self.assertEqual(base.check_secret_keys(None), [base.W009])
 
     @override_settings(SECRET_KEY=('abcdefghijklmnopqrstuvwx' * 2) + 'a')
     def test_low_length_secret_key(self):

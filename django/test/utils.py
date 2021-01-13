@@ -403,12 +403,9 @@ class override_settings(TestContextDecorator):
         # Normalize SECRET_KEY(S)
         has_secret_key = 'SECRET_KEY' in kwargs
         has_secret_keys = 'SECRET_KEYS' in kwargs
-
-        # Raise on both?
-
-        if has_secret_key:
+        if has_secret_key and not has_secret_keys:
             kwargs['SECRET_KEYS'] = [kwargs['SECRET_KEY']] if kwargs['SECRET_KEY'] else []
-        if has_secret_keys:
+        if has_secret_keys and not has_secret_key:
             kwargs['SECRET_KEY'] = kwargs['SECRET_KEYS'][0] if kwargs['SECRET_KEYS'] else None
 
         self.options = kwargs
@@ -426,7 +423,6 @@ class override_settings(TestContextDecorator):
         override = UserSettingsHolder(settings._wrapped)
         for key, new_value in self.options.items():
             setattr(override, key, new_value)
-
         self.wrapped = settings._wrapped
         settings._wrapped = override
         for key, new_value in self.options.items():

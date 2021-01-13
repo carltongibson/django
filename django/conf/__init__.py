@@ -95,7 +95,7 @@ class LazySettings(LazyObject):
         elif name == 'SECRET_KEYS':
             if not val:
                 raise ImproperlyConfigured('The SECRET_KEYS setting must not be empty.')
-            if not val[0]:
+            if not all(val):
                 raise ImproperlyConfigured('The elements of SECRET_KEYS must not be empty.')
 
         self.__dict__[name] = val
@@ -195,20 +195,17 @@ class Settings:
                 self._explicit_settings.add(setting)
 
         # Normalize SECRET_KEY/SECRET_KEYS.
-        # * Providing both is not allowed.
+        # * When one value is provided, map to the other.
         # * Neither is unusual but allowed if not accessing the value, in a
         #   script, for example. Both values are validated on first-access.
-        # * When one value is provided, map to the other.
-        # * Use is_overridden() to allow for possible missing, None, [], ['']
-        #   variations on empty values.
-        has_secret_key = self.is_overridden('SECRET_KEY')
-        has_secret_keys = self.is_overridden('SECRET_KEYS')
-        if has_secret_key and has_secret_keys:
-            raise ImproperlyConfigured('Only one of SECRET_KEY and SECRET_KEYS can be specified, not both.')
-        elif has_secret_key:
+        if self.SECRET_KEY and not self.SECRET_KEYS:
             self.SECRET_KEYS = [self.SECRET_KEY]
-        elif has_secret_keys:
-            self.SECRET_KEY = self.SECRET_KEYS[0] if self.SECRET_KEYS else None
+        elif self.SECRET_KEYS and not self.SECRET_KEY:
+            self.SECRET_KEY = self.SECRET_KEYS[0]
+
+        if self.SECRET_KEY and self.SECRET_KEYS:
+            if self.SECRET_KEY != self.SECRET_KEYS[0]:
+                raise ImproperlyConfigured('Only one of SECRET_KEY and SECRET_KEYS can be specified, not both.')
 
         if self.is_overridden('PASSWORD_RESET_TIMEOUT_DAYS'):
             if self.is_overridden('PASSWORD_RESET_TIMEOUT'):

@@ -405,7 +405,7 @@ class TestSecretKeysNormalization(unittest.TestCase):
     def test_both_specified(self):
         msg = 'Only one of SECRET_KEY and SECRET_KEYS can be specified, not both.'
         with self.assertRaisesRegex(ImproperlyConfigured, msg):
-            self.make_settings(SECRET_KEY='a', SECRET_KEYS=['a'])
+            self.make_settings(SECRET_KEY='a', SECRET_KEYS=['b'])
 
 
 class TestComplexSettingOverride(SimpleTestCase):

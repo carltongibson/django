@@ -189,14 +189,14 @@ def check_ssl_redirect(app_configs, **kwargs):
     return [] if passed_check else [W008]
 
 
-#   Not clear we SHOULDN'T still check SECRET_KEY.
 @register(Tags.security, deploy=True)
 def check_secret_keys(app_configs, **kwargs):
     def check_key(key):
         return (
             key and
             len(set(key)) >= SECRET_KEY_MIN_UNIQUE_CHARACTERS and
-            len(key) >= SECRET_KEY_MIN_LENGTH
+            len(key) >= SECRET_KEY_MIN_LENGTH and
+            not key.startswith(SECRET_KEY_INSECURE_PREFIX)
         )
 
     try:
