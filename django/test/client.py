@@ -6,7 +6,7 @@ from copy import copy
 from functools import partial
 from http import HTTPStatus
 from importlib import import_module
-from io import BytesIO
+from io import BytesIO, IOBase
 from urllib.parse import unquote_to_bytes, urljoin, urlparse, urlsplit
 
 from asgiref.sync import sync_to_async
@@ -55,7 +55,7 @@ class RedirectCycleError(Exception):
         self.redirect_chain = last_response.redirect_chain
 
 
-class FakePayload:
+class FakePayload(IOBase):
     """
     A wrapper around BytesIO that restricts what can be read since data from
     the network can't be sought and cannot be read outside of its content
@@ -63,43 +63,63 @@ class FakePayload:
     that wouldn't work in real life.
     """
 
-    def __init__(self, content=None):
+    def __init__(self, initial_bytes=None):
         self.__content = BytesIO()
         self.__len = 0
         self.read_started = False
-        if content is not None:
-            self.write(content)
+        if initial_bytes is not None:
+            self.write(initial_bytes)
 
     def __len__(self):
         return self.__len
 
-    def read(self, num_bytes=None):
+    def read(self, size=-1, /):
         if not self.read_started:
             self.__content.seek(0)
             self.read_started = True
-        if num_bytes is None:
-            num_bytes = self.__len or 0
+        if size == -1 or size is None:
+            size = self.__len
         assert (
-            self.__len >= num_bytes
+            self.__len >= size
         ), "Cannot read more than the available bytes from the HTTP incoming data."
-        content = self.__content.read(num_bytes)
-        self.__len -= num_bytes
+        content = self.__content.read(size)
+        self.__len -= len(content)
         return content
 
-    def write(self, content):
+    def readline(self, size=-1, /):
+        if not self.read_started:
+            self.__content.seek(0)
+            self.read_started = True
+        if size == -1 or size is None:
+            size = self.__len
+        assert (
+            self.__len >= size
+        ), "Cannot read more than the available bytes from the HTTP incoming data."
+        content = self.__content.readline(size)
+        self.__len -= len(content)
+        return content
+
+    def write(self, b, /):
         if self.read_started:
             raise ValueError("Unable to write a payload after it's been read")
-        content = force_bytes(content)
+        content = force_bytes(b)
         self.__content.write(content)
         self.__len += len(content)
-
-    def close(self):
-        pass
 
 
 def closing_iterator_wrapper(iterable, close):
     try:
         yield from iterable
+    finally:
+        request_finished.disconnect(close_old_connections)
+        close()  # will fire request_finished
+        request_finished.connect(close_old_connections)
+
+
+async def aclosing_iterator_wrapper(iterable, close):
+    try:
+        async for chunk in iterable:
+            yield chunk
     finally:
         request_finished.disconnect(close_old_connections)
         close()  # will fire request_finished
@@ -164,9 +184,14 @@ class ClientHandler(BaseHandler):
 
         # Emulate a WSGI server by calling the close method on completion.
         if response.streaming:
-            response.streaming_content = closing_iterator_wrapper(
-                response.streaming_content, response.close
-            )
+            if response.is_async:
+                response.streaming_content = aclosing_iterator_wrapper(
+                    response.streaming_content, response.close
+                )
+            else:
+                response.streaming_content = closing_iterator_wrapper(
+                    response.streaming_content, response.close
+                )
         else:
             request_finished.disconnect(close_old_connections)
             response.close()  # will fire request_finished
@@ -213,12 +238,14 @@ class AsyncClientHandler(BaseHandler):
         response.asgi_request = request
         # Emulate a server by calling the close method on completion.
         if response.streaming:
-            response.streaming_content = await sync_to_async(
-                closing_iterator_wrapper, thread_sensitive=False
-            )(
-                response.streaming_content,
-                response.close,
-            )
+            if response.is_async:
+                response.streaming_content = aclosing_iterator_wrapper(
+                    response.streaming_content, response.close
+                )
+            else:
+                response.streaming_content = closing_iterator_wrapper(
+                    response.streaming_content, response.close
+                )
         else:
             request_finished.disconnect(close_old_connections)
             # Will fire request_finished.
@@ -260,7 +287,7 @@ def encode_multipart(boundary, data):
     # Each bit of the multipart form data could be either a form value or a
     # file, or a *list* of form values and/or files. Remember that HTTP field
     # names can be duplicated!
-    for (key, value) in data.items():
+    for key, value in data.items():
         if value is None:
             raise TypeError(
                 "Cannot encode None for key '%s' as POST data. Did you mean "
@@ -835,6 +862,7 @@ class Client(ClientMixin, RequestFactory):
         self.raise_request_exception = raise_request_exception
         self.exc_info = None
         self.extra = None
+        self.headers = None
 
     def request(self, **request):
         """
@@ -895,6 +923,7 @@ class Client(ClientMixin, RequestFactory):
     ):
         """Request a response from the server using GET."""
         self.extra = extra
+        self.headers = headers
         response = super().get(path, data=data, secure=secure, headers=headers, **extra)
         if follow:
             response = self._handle_redirects(
@@ -915,6 +944,7 @@ class Client(ClientMixin, RequestFactory):
     ):
         """Request a response from the server using POST."""
         self.extra = extra
+        self.headers = headers
         response = super().post(
             path,
             data=data,
@@ -941,6 +971,7 @@ class Client(ClientMixin, RequestFactory):
     ):
         """Request a response from the server using HEAD."""
         self.extra = extra
+        self.headers = headers
         response = super().head(
             path, data=data, secure=secure, headers=headers, **extra
         )
@@ -963,6 +994,7 @@ class Client(ClientMixin, RequestFactory):
     ):
         """Request a response from the server using OPTIONS."""
         self.extra = extra
+        self.headers = headers
         response = super().options(
             path,
             data=data,
@@ -990,6 +1022,7 @@ class Client(ClientMixin, RequestFactory):
     ):
         """Send a resource to the server using PUT."""
         self.extra = extra
+        self.headers = headers
         response = super().put(
             path,
             data=data,
@@ -1017,6 +1050,7 @@ class Client(ClientMixin, RequestFactory):
     ):
         """Send a resource to the server using PATCH."""
         self.extra = extra
+        self.headers = headers
         response = super().patch(
             path,
             data=data,
@@ -1044,6 +1078,7 @@ class Client(ClientMixin, RequestFactory):
     ):
         """Send a DELETE request to the server."""
         self.extra = extra
+        self.headers = headers
         response = super().delete(
             path,
             data=data,
@@ -1070,6 +1105,7 @@ class Client(ClientMixin, RequestFactory):
     ):
         """Send a TRACE request to the server."""
         self.extra = extra
+        self.headers = headers
         response = super().trace(
             path, data=data, secure=secure, headers=headers, **extra
         )
@@ -1180,6 +1216,7 @@ class AsyncClient(ClientMixin, AsyncRequestFactory):
         self.raise_request_exception = raise_request_exception
         self.exc_info = None
         self.extra = None
+        self.headers = None
 
     async def request(self, **request):
         """

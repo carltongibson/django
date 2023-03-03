@@ -33,7 +33,6 @@ from django.db.models.utils import (
     resolve_callables,
 )
 from django.utils import timezone
-from django.utils.deprecation import RemovedInDjango50Warning
 from django.utils.functional import cached_property, partition
 
 # The maximum number of results to fetch in a get() query.
@@ -529,16 +528,9 @@ class QuerySet(AltersData):
         """
         if chunk_size is None:
             if self._prefetch_related_lookups:
-                # When the deprecation ends, replace with:
-                # raise ValueError(
-                #     'chunk_size must be provided when using '
-                #     'QuerySet.iterator() after prefetch_related().'
-                # )
-                warnings.warn(
-                    "Using QuerySet.iterator() after prefetch_related() "
-                    "without specifying chunk_size is deprecated.",
-                    category=RemovedInDjango50Warning,
-                    stacklevel=2,
+                raise ValueError(
+                    "chunk_size must be provided when using QuerySet.iterator() after "
+                    "prefetch_related()."
                 )
         elif chunk_size <= 0:
             raise ValueError("Chunk size must be strictly positive.")
@@ -934,25 +926,32 @@ class QuerySet(AltersData):
             **kwargs,
         )
 
-    def update_or_create(self, defaults=None, **kwargs):
+    def update_or_create(self, defaults=None, create_defaults=None, **kwargs):
         """
         Look up an object with the given kwargs, updating one with defaults
-        if it exists, otherwise create a new one.
+        if it exists, otherwise create a new one. Optionally, an object can
+        be created with different values than defaults by using
+        create_defaults.
         Return a tuple (object, created), where created is a boolean
         specifying whether an object was created.
         """
-        defaults = defaults or {}
+        if create_defaults is None:
+            update_defaults = create_defaults = defaults or {}
+        else:
+            update_defaults = defaults or {}
         self._for_write = True
         with transaction.atomic(using=self.db):
             # Lock the row so that a concurrent update is blocked until
             # update_or_create() has performed its save.
-            obj, created = self.select_for_update().get_or_create(defaults, **kwargs)
+            obj, created = self.select_for_update().get_or_create(
+                create_defaults, **kwargs
+            )
             if created:
                 return obj, created
-            for k, v in resolve_callables(defaults):
+            for k, v in resolve_callables(update_defaults):
                 setattr(obj, k, v)
 
-            update_fields = set(defaults)
+            update_fields = set(update_defaults)
             concrete_field_names = self.model._meta._non_pk_concrete_field_names
             # update_fields does not support non-concrete fields.
             if concrete_field_names.issuperset(update_fields):
@@ -972,9 +971,10 @@ class QuerySet(AltersData):
                 obj.save(using=self.db)
         return obj, False
 
-    async def aupdate_or_create(self, defaults=None, **kwargs):
+    async def aupdate_or_create(self, defaults=None, create_defaults=None, **kwargs):
         return await sync_to_async(self.update_or_create)(
             defaults=defaults,
+            create_defaults=create_defaults,
             **kwargs,
         )
 
@@ -1372,11 +1372,7 @@ class QuerySet(AltersData):
             .order_by(("-" if order == "DESC" else "") + "datefield")
         )
 
-    # RemovedInDjango50Warning: when the deprecation ends, remove is_dst
-    # argument.
-    def datetimes(
-        self, field_name, kind, order="ASC", tzinfo=None, is_dst=timezone.NOT_PASSED
-    ):
+    def datetimes(self, field_name, kind, order="ASC", tzinfo=None):
         """
         Return a list of datetime objects representing all available
         datetimes for the given field_name, scoped to 'kind'.
@@ -1400,7 +1396,6 @@ class QuerySet(AltersData):
                     kind,
                     output_field=DateTimeField(),
                     tzinfo=tzinfo,
-                    is_dst=is_dst,
                 ),
                 plain_field=F(field_name),
             )
@@ -2123,7 +2118,7 @@ class RawQuerySet:
         """
         columns = self.query.get_columns()
         # Adjust any column names which don't match field names
-        for (query_name, model_name) in self.translations.items():
+        for query_name, model_name in self.translations.items():
             # Ignore translations for nonexistent column names
             try:
                 index = columns.index(query_name)

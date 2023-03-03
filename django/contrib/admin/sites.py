@@ -1,4 +1,3 @@
-import re
 from functools import update_wrapper
 from weakref import WeakSet
 
@@ -126,7 +125,7 @@ class AdminSite:
                 msg = "The model %s is already registered " % model.__name__
                 if registered_admin.endswith(".ModelAdmin"):
                     # Most likely registered without a ModelAdmin subclass.
-                    msg += "in app %r." % re.sub(r"\.ModelAdmin$", "", registered_admin)
+                    msg += "in app %r." % registered_admin.removesuffix(".ModelAdmin")
                 else:
                     msg += "with %r." % registered_admin
                 raise AlreadyRegistered(msg)
@@ -337,6 +336,7 @@ class AdminSite:
             "available_apps": self.get_app_list(request),
             "is_popup": False,
             "is_nav_sidebar_enabled": self.enable_nav_sidebar,
+            "log_entries": self.get_log_entries(request),
         }
 
     def password_change(self, request, extra_context=None):
@@ -588,6 +588,11 @@ class AdminSite:
             or ["admin/%s/app_index.html" % app_label, "admin/app_index.html"],
             context,
         )
+
+    def get_log_entries(self, request):
+        from django.contrib.admin.models import LogEntry
+
+        return LogEntry.objects.select_related("content_type", "user")
 
 
 class DefaultAdminSite(LazyObject):
