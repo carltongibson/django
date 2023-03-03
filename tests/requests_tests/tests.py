@@ -1,3 +1,4 @@
+import json
 import pickle
 from io import BytesIO
 from itertools import chain
@@ -292,7 +293,7 @@ class RequestsTests(SimpleTestCase):
         self.assertEqual(stream.read(2), b"")
         self.assertEqual(stream.read(), b"")
 
-    def test_stream(self):
+    def test_stream_read(self):
         payload = FakePayload("name=value")
         request = WSGIRequest(
             {
@@ -303,6 +304,19 @@ class RequestsTests(SimpleTestCase):
             },
         )
         self.assertEqual(request.read(), b"name=value")
+
+    def test_stream_readline(self):
+        payload = FakePayload("name=value\nother=string")
+        request = WSGIRequest(
+            {
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": len(payload),
+                "wsgi.input": payload,
+            },
+        )
+        self.assertEqual(request.readline(), b"name=value\n")
+        self.assertEqual(request.readline(), b"other=string")
 
     def test_read_after_value(self):
         """
@@ -359,6 +373,41 @@ class RequestsTests(SimpleTestCase):
                 )
                 self.assertEqual(request.data, {"key": ["value"]})
 
+    def test_json_data(self):
+        """
+        JSON from various methods.
+        """
+        for method in ["GET", "POST", "PUT", "DELETE"]:
+            with self.subTest(method=method):
+                payload = FakePayload('{"key": "value"}')
+                request = WSGIRequest(
+                    {
+                        "REQUEST_METHOD": method,
+                        "CONTENT_LENGTH": len(payload),
+                        "CONTENT_TYPE": "application/json",
+                        "wsgi.input": payload,
+                    }
+                )
+                self.assertEqual(request.data, {"key": "value"})
+
+    def test_invalid_json_data_error(self):
+        """
+        Catch an error for invalid JSON data from various methods.
+        """
+        for method in ["GET", "POST", "PUT", "DELETE"]:
+            with self.subTest(method=method):
+                payload = FakePayload("name=value")
+                request = WSGIRequest(
+                    {
+                        "REQUEST_METHOD": method,
+                        "CONTENT_LENGTH": len(payload),
+                        "CONTENT_TYPE": "application/json",
+                        "wsgi.input": payload,
+                    }
+                )
+                with self.assertRaises(json.JSONDecodeError):
+                    request.data
+
     # TODO: RemovedInDjango51Warning
     def test_basic_POST_alias(self):
         # Parsed data available for POST request.
@@ -412,6 +461,70 @@ class RequestsTests(SimpleTestCase):
             }
         )
         self.assertEqual(request.POST, {"key": ["España"]})
+
+    def test_POST_multipart_json_data(self):
+        payload = FakePayload(
+            "\r\n".join(
+                [
+                    "--boundary",
+                    'Content-Disposition: form-data; name="json_data"',
+                    "Content-Type: application/json",
+                    "",
+                    '{"key": "value"}',
+                    "--boundary--",
+                ]
+            )
+        )
+        request = WSGIRequest(
+            {
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "multipart/form-data; boundary=boundary",
+                "CONTENT_LENGTH": len(payload),
+                "wsgi.input": payload,
+            }
+        )
+        self.assertEqual(request.data.get("json_data"), {"key": "value"})
+
+    def test_POST_multipart_form_and_json_data(self):
+        payload = FakePayload(
+            "\r\n".join(
+                [
+                    "--boundary",
+                    'Content-Disposition: form-data; name="json_data"',
+                    "Content-Type: application/json",
+                    "",
+                    '{"key": "value"}',
+                    "--boundary--",
+                    'Content-Disposition: form-data; name="new_json_data"',
+                    "Content-Type: application/json",
+                    "",
+                    '{"key": "value"}',
+                    "--boundary--",
+                    'Content-Disposition: form-data; name="json_data"',
+                    "Content-Type: application/json",
+                    "",
+                    '{"key_1": "value_1"}',
+                    "--boundary--",
+                    'Content-Disposition: form-data; name="name"',
+                    "",
+                    "value",
+                    "--boundary--",
+                ]
+            )
+        )
+        request = WSGIRequest(
+            {
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "multipart/form-data; boundary=boundary",
+                "CONTENT_LENGTH": len(payload),
+                "wsgi.input": payload,
+            }
+        )
+        self.assertEqual(
+            request.data.getlist("json_data"), [{"key": "value"}, {"key_1": "value_1"}]
+        )
+        self.assertEqual(request.data.get("new_json_data"), {"key": "value"})
+        self.assertEqual(request.data.get("name"), "value")
 
     def test_body_after_POST_multipart_form_data(self):
         """
@@ -657,7 +770,7 @@ class RequestsTests(SimpleTestCase):
         """
 
         class ExplodingBytesIO(BytesIO):
-            def read(self, len=0):
+            def read(self, size=-1, /):
                 raise OSError("kaboom!")
 
         payload = b"name=value"
@@ -687,10 +800,11 @@ class RequestsTests(SimpleTestCase):
         self.assertEqual(request.POST, {"name": ["Hello GĂŒnter"]})
 
     def test_set_encoding_clears_GET(self):
+        payload = FakePayload("")
         request = WSGIRequest(
             {
                 "REQUEST_METHOD": "GET",
-                "wsgi.input": "",
+                "wsgi.input": payload,
                 "QUERY_STRING": "name=Hello%20G%C3%BCnter",
             }
         )
@@ -705,7 +819,7 @@ class RequestsTests(SimpleTestCase):
         """
 
         class ExplodingBytesIO(BytesIO):
-            def read(self, len=0):
+            def read(self, size=-1, /):
                 raise OSError("kaboom!")
 
         payload = b"x"

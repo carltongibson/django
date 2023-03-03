@@ -237,7 +237,7 @@ class ArrayField(CheckFieldDefaultMixin, Field):
 
 class ArrayRHSMixin:
     def __init__(self, lhs, rhs):
-        # Don't wrap arrays that contains only None values, psycopg2 doesn't
+        # Don't wrap arrays that contains only None values, psycopg doesn't
         # allow this.
         if isinstance(rhs, (tuple, list)) and any(self._rhs_not_none_values(rhs)):
             expressions = []
@@ -297,7 +297,7 @@ class ArrayLenTransform(Transform):
         return (
             "CASE WHEN %(lhs)s IS NULL THEN NULL ELSE "
             "coalesce(array_length(%(lhs)s, 1), 0) END"
-        ) % {"lhs": lhs}, params
+        ) % {"lhs": lhs}, params * 2
 
 
 @ArrayField.register_lookup
@@ -325,7 +325,9 @@ class IndexTransform(Transform):
 
     def as_sql(self, compiler, connection):
         lhs, params = compiler.compile(self.lhs)
-        return "%s[%%s]" % lhs, params + [self.index]
+        if not lhs.endswith("]"):
+            lhs = "(%s)" % lhs
+        return "%s[%%s]" % lhs, (*params, self.index)
 
     @property
     def output_field(self):
@@ -349,7 +351,9 @@ class SliceTransform(Transform):
 
     def as_sql(self, compiler, connection):
         lhs, params = compiler.compile(self.lhs)
-        return "%s[%%s:%%s]" % lhs, params + [self.start, self.end]
+        if not lhs.endswith("]"):
+            lhs = "(%s)" % lhs
+        return "%s[%%s:%%s]" % lhs, (*params, self.start, self.end)
 
 
 class SliceTransformFactory:

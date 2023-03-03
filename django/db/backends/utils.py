@@ -4,9 +4,9 @@ import functools
 import logging
 import time
 from contextlib import contextmanager
+from hashlib import md5
 
 from django.db import NotSupportedError
-from django.utils.crypto import md5
 from django.utils.dateparse import parse_time
 
 logger = logging.getLogger("django.db.backends")
@@ -95,7 +95,6 @@ class CursorWrapper:
 
 
 class CursorDebugWrapper(CursorWrapper):
-
     # XXX callproc isn't instrumented at this time.
 
     def execute(self, sql, params=None):

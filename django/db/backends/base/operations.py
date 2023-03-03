@@ -269,6 +269,7 @@ class BaseDatabaseOperations:
         exists for database backends to provide a better implementation
         according to their own quoting schemes.
         """
+
         # Convert params to contain string values.
         def to_string(s):
             return force_str(s, strings_only=True, errors="replace")
@@ -524,6 +525,9 @@ class BaseDatabaseOperations:
             return self.adapt_decimalfield_value(value)
         else:
             return value
+
+    def adapt_integerfield_value(self, value, internal_type):
+        return value
 
     def adapt_datefield_value(self, value):
         """

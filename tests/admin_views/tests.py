@@ -2,18 +2,9 @@ import datetime
 import os
 import re
 import unittest
+import zoneinfo
 from unittest import mock
 from urllib.parse import parse_qsl, urljoin, urlparse
-
-try:
-    import zoneinfo
-except ImportError:
-    from backports import zoneinfo
-
-try:
-    import pytz
-except ImportError:
-    pytz = None
 
 from django.contrib import admin
 from django.contrib.admin import AdminSite, ModelAdmin
@@ -157,9 +148,6 @@ MULTIPART_ENCTYPE = 'enctype="multipart/form-data"'
 def make_aware_datetimes(dt, iana_key):
     """Makes one aware datetime for each supported time zone provider."""
     yield dt.replace(tzinfo=zoneinfo.ZoneInfo(iana_key))
-
-    if pytz is not None:
-        yield pytz.timezone(iana_key).localize(dt, is_dst=None)
 
 
 class AdminFieldExtractionMixin:
@@ -3371,8 +3359,8 @@ class AdminViewDeletedObjectsTest(TestCase):
         cls.ssh1 = SuperSecretHideout.objects.create(
             location="super floating castle!", supervillain=cls.sv1
         )
-        cls.cy1 = CyclicOne.objects.create(name="I am recursive", two_id=1)
-        cls.cy2 = CyclicTwo.objects.create(name="I am recursive too", one_id=1)
+        cls.cy1 = CyclicOne.objects.create(pk=1, name="I am recursive", two_id=1)
+        cls.cy2 = CyclicTwo.objects.create(pk=1, name="I am recursive too", one_id=1)
 
     def setUp(self):
         self.client.force_login(self.superuser)
@@ -5548,7 +5536,6 @@ class PrePopulatedTest(TestCase):
 
 @override_settings(ROOT_URLCONF="admin_views.urls")
 class SeleniumTests(AdminSeleniumTestCase):
-
     available_apps = ["admin_views"] + AdminSeleniumTestCase.available_apps
 
     def setUp(self):
@@ -6562,20 +6549,20 @@ class ReadonlyTest(AdminFieldExtractionMixin, TestCase):
         self.assertContains(response, '<div class="help"', 3)
         self.assertContains(
             response,
-            '<div class="help" id="id_title_helptext">Some help text for the title '
-            "(with Unicode ŠĐĆŽćžšđ)</div>",
+            '<div class="help" id="id_title_helptext"><div>Some help text for the '
+            "title (with Unicode ŠĐĆŽćžšđ)</div></div>",
             html=True,
         )
         self.assertContains(
             response,
-            '<div class="help" id="id_content_helptext">Some help text for the content '
-            "(with Unicode ŠĐĆŽćžšđ)</div>",
+            '<div class="help" id="id_content_helptext"><div>Some help text for the '
+            "content (with Unicode ŠĐĆŽćžšđ)</div></div>",
             html=True,
         )
         self.assertContains(
             response,
-            '<div class="help">Some help text for the date (with Unicode ŠĐĆŽćžšđ)'
-            "</div>",
+            '<div class="help"><div>Some help text for the date (with Unicode ŠĐĆŽćžšđ)'
+            "</div></div>",
             html=True,
         )
 
@@ -6757,7 +6744,7 @@ class ReadonlyTest(AdminFieldExtractionMixin, TestCase):
         )
         self.assertContains(
             response,
-            '<div class="help">Overridden help text for the date</div>',
+            '<div class="help"><div>Overridden help text for the date</div></div>',
             html=True,
         )
         self.assertContains(
@@ -7949,6 +7936,21 @@ class AdminKeepChangeListFiltersTests(TestCase):
         response = self.client.post(self.get_change_url(), data=post_data)
         self.assertRedirects(response, self.get_add_url())
         post_data.pop("_addanother")
+
+    def test_change_view_close_link(self):
+        viewuser = User.objects.create_user(
+            username="view", password="secret", is_staff=True
+        )
+        viewuser.user_permissions.add(
+            get_perm(User, get_permission_codename("view", User._meta))
+        )
+        self.client.force_login(viewuser)
+        response = self.client.get(self.get_change_url())
+        close_link = re.search(
+            '<a href="(.*?)" class="closelink">Close</a>', response.content.decode()
+        )
+        close_link = close_link[1].replace("&amp;", "&")
+        self.assertURLEqual(close_link, self.get_changelist_url())
 
     def test_change_view_without_preserved_filters(self):
         response = self.client.get(self.get_change_url(add_preserved_filters=False))

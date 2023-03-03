@@ -30,7 +30,6 @@ TEST_SETTINGS = {
 
 @override_settings(ROOT_URLCONF="servers.urls", **TEST_SETTINGS)
 class LiveServerBase(LiveServerTestCase):
-
     available_apps = [
         "servers",
         "django.contrib.auth",
@@ -56,7 +55,6 @@ class CloseConnectionTestServer(ThreadedWSGIServer):
 
 
 class CloseConnectionTestLiveServerThread(LiveServerThread):
-
     server_class = CloseConnectionTestServer
 
     def _create_server(self, connections_override=None):
@@ -64,7 +62,6 @@ class CloseConnectionTestLiveServerThread(LiveServerThread):
 
 
 class LiveServerTestCloseConnectionTest(LiveServerBase):
-
     server_thread_class = CloseConnectionTestLiveServerThread
 
     @classmethod
@@ -377,12 +374,15 @@ class LiveServerPort(LiveServerBase):
                 return
             # Unexpected error.
             raise
-        self.assertNotEqual(
-            self.live_server_url,
-            TestCase.live_server_url,
-            f"Acquired duplicate server addresses for server threads: "
-            f"{self.live_server_url}",
-        )
+        try:
+            self.assertNotEqual(
+                self.live_server_url,
+                TestCase.live_server_url,
+                f"Acquired duplicate server addresses for server threads: "
+                f"{self.live_server_url}",
+            )
+        finally:
+            TestCase.doClassCleanups()
 
     def test_specified_port_bind(self):
         """LiveServerTestCase.port customizes the server's port."""
@@ -393,12 +393,15 @@ class LiveServerPort(LiveServerBase):
         TestCase.port = s.getsockname()[1]
         s.close()
         TestCase._start_server_thread()
-        self.assertEqual(
-            TestCase.port,
-            TestCase.server_thread.port,
-            f"Did not use specified port for LiveServerTestCase thread: "
-            f"{TestCase.port}",
-        )
+        try:
+            self.assertEqual(
+                TestCase.port,
+                TestCase.server_thread.port,
+                f"Did not use specified port for LiveServerTestCase thread: "
+                f"{TestCase.port}",
+            )
+        finally:
+            TestCase.doClassCleanups()
 
 
 class LiveServerThreadedTests(LiveServerBase):

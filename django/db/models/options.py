@@ -30,6 +30,7 @@ DEFAULT_NAMES = (
     "verbose_name",
     "verbose_name_plural",
     "db_table",
+    "db_table_comment",
     "ordering",
     "unique_together",
     "permissions",
@@ -112,6 +113,7 @@ class Options:
         self.verbose_name = None
         self.verbose_name_plural = None
         self.db_table = ""
+        self.db_table_comment = ""
         self.ordering = []
         self._ordering_clash = False
         self.indexes = []
@@ -526,6 +528,7 @@ class Options:
         combined with filtering of field properties is the public API for
         obtaining this field list.
         """
+
         # For legacy reasons, the fields property should only contain forward
         # fields that are not private or with a m2m cardinality. Therefore we
         # pass these three filters as filters to the generator.
