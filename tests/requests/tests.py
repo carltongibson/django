@@ -12,6 +12,7 @@ from django.http import (
     UnreadablePostError,
 )
 from django.http.multipartparser import MultiPartParserError
+from django.http.parsers import ParserException
 from django.http.request import split_domain_port
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.test.client import FakePayload
@@ -385,6 +386,33 @@ class RequestsTests(SimpleTestCase):
                     }
                 )
                 self.assertEqual(request.POST, {})
+
+    def test_json_parsing(self):
+        for method in ["GET", "POST", "PUT", "DELETE"]:
+            payload = FakePayload('{"key": "value"}')
+            request = WSGIRequest(
+                {
+                    "REQUEST_METHOD": method,
+                    "CONTENT_LENGTH": len(payload),
+                    "CONTENT_TYPE": "application/json",
+                    "wsgi.input": payload,
+                }
+            )
+            self.assertEqual(request.data, {"key": "value"})
+
+    def test_json_parsing_error(self):
+        for method in ["GET", "POST", "PUT", "DELETE"]:
+            payload = FakePayload("name=value")
+            request = WSGIRequest(
+                {
+                    "REQUEST_METHOD": method,
+                    "CONTENT_LENGTH": len(payload),
+                    "CONTENT_TYPE": "application/json",
+                    "wsgi.input": payload,
+                }
+            )
+            with self.assertRaises(ParserException):
+                request.data
 
     def test_non_ascii_POST(self):
         payload = FakePayload(urlencode({"key": "España"}))

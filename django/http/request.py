@@ -14,6 +14,7 @@ from django.core.exceptions import (
 )
 from django.core.files import uploadhandler
 from django.http.multipartparser import MultiPartParser, MultiPartParserError
+from django.http.parsers import JSONParser
 from django.utils.datastructures import (
     CaseInsensitiveMapping,
     ImmutableList,
@@ -390,6 +391,10 @@ class HttpRequest:
                 QueryDict(self.body, encoding=self._encoding),
                 MultiValueDict(),
             )
+        elif self.content_type == "application/json":
+            parser = JSONParser()
+            self._post = parser.parse(self.body)
+            self._files = MultiValueDict()
         else:
             self._post, self._files = (
                 QueryDict(encoding=self._encoding),
