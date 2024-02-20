@@ -97,7 +97,7 @@ create a real version. Add the following to ``polls/views.py``:
                 },
             )
         else:
-            selected_choice.votes += 1
+            selected_choice.votes = F("votes") + 1
             selected_choice.save()
             # Always return an HttpResponseRedirect after successfully dealing
             # with POST data. This prevents data from being posted twice if a
@@ -122,6 +122,9 @@ This code includes a few things we haven't covered yet in this tutorial:
   ``choice`` wasn't provided in POST data. The above code checks for
   :exc:`KeyError` and redisplays the question form with an error
   message if ``choice`` isn't given.
+
+* ``F("votes") + 1`` :ref:`instructs the database <avoiding-race-conditions-using-f>`
+  to increase the vote count by 1.
 
 * After incrementing the choice count, the code returns an
   :class:`~django.http.HttpResponseRedirect` rather than a normal
