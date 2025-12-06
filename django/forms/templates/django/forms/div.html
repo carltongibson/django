@@ -1,7 +1,5 @@
 {{ errors }}
 {% for field, errors in fields %}
-  <div{% with classes=field.css_classes %}{% if classes %} class="{{ classes }}"{% endif %}{% endwith %}>
     {{ field.as_field_group }}
-  </div>
 {% endfor %}
 {% for field in hidden_fields %}{{ field }}{% endfor %}
