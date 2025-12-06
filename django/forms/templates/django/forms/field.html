@@ -1,3 +1,4 @@
+{# Pre Django 6.0 usage: {% load partials %} #}
 <div{% with classes=field.css_classes %}{% if classes %} class="{{ classes }}"{% endif %}{% endwith %}>
 {% partialdef field-group inline %}
 {% if field.use_fieldset %}
