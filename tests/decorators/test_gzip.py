@@ -75,7 +75,7 @@ class GzipPageTests(SimpleTestCase):
         @gzip_page
         async def streaming_acmgr_view(request):
             sleep_time = float(request.GET["sleep"])
-            return StreamingAcmgrHttpResponse(streaming_acmgr_inner(sleep_time))
+            return StreamingHttpResponse(streaming_acmgr_inner(sleep_time))
 
         request = HttpRequest()
         request.META["HTTP_ACCEPT_ENCODING"] = "gzip"

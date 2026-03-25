@@ -22,7 +22,6 @@ from django.http.response import (
     HttpResponseRedirect,
     HttpResponseServerError,
     JsonResponse,
-    StreamingAcmgrHttpResponse,
     StreamingHttpResponse,
 )
 
@@ -37,7 +36,6 @@ __all__ = [
     "HttpResponse",
     "HttpResponseBase",
     "StreamingHttpResponse",
-    "StreamingAcmgrHttpResponse",
     "HttpResponseRedirect",
     "HttpResponsePermanentRedirect",
     "HttpResponseNotModified",

@@ -830,15 +830,10 @@ generators are immediately closed.
 If you need the response to be streamed from the iterator to the client, you
 must use the :class:`StreamingHttpResponse` class instead.
 
-If you're using an async server you are likely to need
-:class:`StreamingAcmgrHttpResponse` instead
-
 .. _streaming-with-taskgroups:
 
-``StreamingAcmgrHttpResponse`` objects
-======================================
-
-.. class:: StreamingAcmgrHttpResponse
+Streaming with task groups
+==========================
 
 .. versionadded:: 6.1
 
@@ -893,9 +888,11 @@ The Solution: Using Async Context Managers
 -------------------------------------------
 
 Instead of passing an async generator directly to
-:class:`StreamingHttpResponse` use :class:`StreamingAcmgrHttpResponse`
-and wrap your streaming logic in an async context manager that yields an
-async iterator bytes resource for example an async generator.
+:class:`StreamingHttpResponse`, wrap your streaming logic in an async context
+manager that yields an async iterator bytes resource (for example an async
+generator) and pass the context manager to :class:`StreamingHttpResponse`.
+Django will automatically detect that the value is an async context manager
+and handle it appropriately.
 This allows proper cleanup and cancellation handling.
 
 Example with AnyIO
@@ -905,12 +902,12 @@ Here's the correct way to combine multiple streams using ``anyio``::
 
     import contextlib
     from typing import AsyncGenerator
-    from django.http import StreamingAcmgrHttpResponse, HttpRequest
+    from django.http import StreamingHttpResponse, HttpRequest
     import anyio
     from anyio.streams.memory import MemoryObjectSendStream, MemoryObjectReceiveStream
 
 
-    async def news_and_weather(request: HttpRequest) -> StreamingAcmgrHttpResponse:
+    async def news_and_weather(request: HttpRequest) -> StreamingHttpResponse:
         @contextlib.asynccontextmanager
         async def stream_manager() -> (
             AsyncGenerator[MemoryObjectReceiveStream[bytes], None]
@@ -942,7 +939,7 @@ Here's the correct way to combine multiple streams using ``anyio``::
 
                 # TaskGroup waits here for all tasks to complete or cancel properly
 
-        return StreamingAcmgrHttpResponse(stream_manager())
+        return StreamingHttpResponse(stream_manager())
 
 Example with asyncio
 ~~~~~~~~~~~~~~~~~~~~
@@ -953,7 +950,7 @@ Here's the equivalent implementation using Python's built-in ``asyncio``::
         pass
 
 
-    async def news_and_weather(request: HttpRequest) -> StreamingAcmgrHttpResponse:
+    async def news_and_weather(request: HttpRequest) -> StreamingHttpResponse:
         @contextlib.asynccontextmanager
         async def acmgr_gen() -> AsyncGenerator[AsyncGenerator[bytes]]:
             async def push(ws_url: str, q: asyncio.Queue[Eof | bytes], eof: Eof) -> None:
@@ -984,14 +981,14 @@ Here's the equivalent implementation using Python's built-in ``asyncio``::
 
                 yield agen_fn()  # yield inside asynccontextmanager, permitted inside TaskGroup
 
-        return StreamingAcmgrHttpResponse(acmgr_gen())
+        return StreamingHttpResponse(acmgr_gen())
 
 
 How It Works
 ------------
 
 When you pass an async context manager to
-:class:`~django.http.StreamingAcmgrHttpResponse`, Django:
+:class:`~django.http.StreamingHttpResponse`, Django:
 
 1. Enters the async context manager by calling ``__aenter__()``
 2. Expects the context manager to yield an async iterator bytes resource

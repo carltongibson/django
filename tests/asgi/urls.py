@@ -6,7 +6,6 @@ import time
 from django.http import (
     FileResponse,
     HttpResponse,
-    StreamingAcmgrHttpResponse,
     StreamingHttpResponse,
 )
 from django.urls import path
@@ -93,11 +92,11 @@ async def streaming_acmgr_inner(sleep_time):
 
 async def streaming_acmgr_view(request):
     sleep_time = float(request.GET["sleep"])
-    return StreamingAcmgrHttpResponse(streaming_acmgr_inner(sleep_time))
+    return StreamingHttpResponse(streaming_acmgr_inner(sleep_time))
 
 
 async def streaming_noop_acmgr_view(request):
-    return StreamingAcmgrHttpResponse()
+    return StreamingHttpResponse()
 
 
 test_filename = __file__

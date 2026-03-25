@@ -452,7 +452,6 @@ class StreamingHttpResponse(HttpResponseBase):
     """
 
     streaming = True
-    streaming_acmgr = False
 
     def __init__(self, streaming_content=(), *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -468,8 +467,9 @@ class StreamingHttpResponse(HttpResponseBase):
         }
 
     async def __aenter__(self):
-        # - noop acmgr interface so StreamingHttpResponse can be used in the
-        #   same way as StreamingAcmgrHttpResponse
+        if self._is_acmgr:
+            return await self._acmgr.__aenter__()
+        # - noop acmgr interface for non-acmgr streaming responses.
         # - Consume via `__aiter__` and not `streaming_content` directly,
         #   to allow mapping of a sync iterator.
         # - Use aclosing() when consuming aiter. See
@@ -477,7 +477,21 @@ class StreamingHttpResponse(HttpResponseBase):
         return aiter(self)
 
     async def __aexit__(self, *exc_info):
+        if self._is_acmgr:
+            return await self._acmgr.__aexit__(*exc_info)
         return None
+
+    @property
+    def streaming_acmgr(self):
+        return self._is_acmgr
+
+    @property
+    def streaming_acmgr_content(self):
+        return self._acmgr
+
+    @streaming_acmgr_content.setter
+    def streaming_acmgr_content(self, value):
+        self._set_streaming_content(value)
 
     @property
     def content(self):
@@ -494,6 +508,11 @@ class StreamingHttpResponse(HttpResponseBase):
 
     @property
     def streaming_content(self):
+        if self._is_acmgr:
+            raise AttributeError(
+                "This %s instance has no `streaming_content` attribute. Use "
+                "`streaming_acmgr_content` instead." % self.__class__.__name__
+            )
         if self.is_async:
             # pull to lexical scope to capture fixed reference in case
             # streaming_content is set again later.
@@ -512,6 +531,12 @@ class StreamingHttpResponse(HttpResponseBase):
         self._set_streaming_content(value)
 
     def _set_streaming_content(self, value):
+        if hasattr(value, "__aenter__") and hasattr(value, "__aexit__"):
+            self._acmgr = value
+            self._is_acmgr = True
+            self.is_async = True
+            return
+        self._is_acmgr = False
         # Ensure we can never iterate on "value" more than once.
         try:
             self._iterator = iter(value)
@@ -523,6 +548,21 @@ class StreamingHttpResponse(HttpResponseBase):
             self._resource_closers.append(value.close)
 
     def __iter__(self):
+        if self._is_acmgr:
+            warnings.warn(
+                "StreamingHttpResponse must consume asynchronous iterators in "
+                "order to serve them synchronously. Use a synchronous iterator "
+                "instead.",
+                Warning,
+                stacklevel=2,
+            )
+
+            # async context manager. Consume in async_to_sync and map back.
+            async def to_list():
+                async with self as v, aclosing(v):
+                    return [chunk async for chunk in v]
+
+            return map(self.make_bytes, iter(async_to_sync(to_list)()))
         try:
             return iter(self.streaming_content)
         except TypeError:
@@ -543,6 +583,20 @@ class StreamingHttpResponse(HttpResponseBase):
             return map(self.make_bytes, iter(async_to_sync(to_list)(self._iterator)))
 
     async def __aiter__(self):
+        if self._is_acmgr:
+            warnings.warn(
+                "StreamingHttpResponse must consume async context manager "
+                "iterators in order to serve them asynchronously. Use a "
+                "context manager instead.",
+                Warning,
+                stacklevel=2,
+            )
+            async with self as v, aclosing(v):
+                content = [chunk async for chunk in v]
+
+            for chunk in content:
+                yield chunk
+            return
         try:
             async for part in self.streaming_content:
                 yield part
@@ -560,103 +614,6 @@ class StreamingHttpResponse(HttpResponseBase):
 
     def getvalue(self):
         return b"".join(self.streaming_content)
-
-
-class _NoopStreamingAcmgr:
-    async def __aenter__(self):
-        async def gen():
-            yield b""
-
-        return gen()
-
-    async def __aexit__(self, *exc_info):
-        return
-
-
-class StreamingAcmgrHttpResponse(HttpResponseBase):
-    """
-    A streaming HTTP response class with an iterator as content.
-
-    This should only be iterated once, when the response is streamed to the
-    client. However, it can be appended to or replaced with a new iterator
-    that wraps the original content (or yields entirely new content).
-    """
-
-    is_async = True
-    streaming = True
-    streaming_acmgr = True
-
-    def __init__(self, streaming_acmgr_content=_NoopStreamingAcmgr(), *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # `streaming_content` should be an
-        # class AsyncBytesIteratorResource(
-        #     Protocol,
-        #     SupportsAclose,
-        #     AsyncIterator[bytes]
-        # ): ...
-        # AbstractAsyncContextManager[AsyncBytesIteratorResource].
-        self.streaming_acmgr_content = streaming_acmgr_content
-
-    async def __aenter__(self):
-        return await self.streaming_acmgr_content.__aenter__()
-
-    async def __aexit__(self, *exc_info):
-        return await self.streaming_acmgr_content.__aexit__(*exc_info)
-
-    def __repr__(self):
-        return "<%(cls)s status_code=%(status_code)d%(content_type)s>" % {
-            "cls": self.__class__.__qualname__,
-            "status_code": self.status_code,
-            "content_type": self._content_type_for_repr,
-        }
-
-    @property
-    def content(self):
-        raise AttributeError(
-            "This %s instance has no `content` attribute. Use "
-            "`streaming_acmgr_content` instead." % self.__class__.__name__
-        )
-
-    @property
-    def text(self):
-        raise AttributeError(
-            "This %s instance has no `text` attribute." % self.__class__.__name__
-        )
-
-    @property
-    def streaming_content(self):
-        raise AttributeError(
-            "This %s instance has no `streaming_content` attribute. Use "
-            "`streaming_acmgr_content` instead." % self.__class__.__name__
-        )
-
-    def __iter__(self):
-        warnings.warn(
-            "StreamingHttpResponse must consume asynchronous iterators in order to "
-            "serve them synchronously. Use a synchronous iterator instead.",
-            Warning,
-            stacklevel=2,
-        )
-
-        # async iterator. Consume in async_to_sync and map back.
-        async def to_list():
-            async with self as v, aclosing(v):
-                return [chunk async for chunk in v]
-
-        return map(self.make_bytes, iter(async_to_sync(to_list)))
-
-    async def __aiter__(self):
-        warnings.warn(
-            "StreamingAcmgrHttpResponse must consume asynchronous iterators in"
-            " order to serve them asynchronously. Use a cmgr instead.",
-            Warning,
-            stacklevel=2,
-        )
-        async with self as v, aclosing(v):
-            content = [chunk async for chunk in v]
-
-        for chunk in content:
-            yield chunk
 
 
 class FileResponse(StreamingHttpResponse):

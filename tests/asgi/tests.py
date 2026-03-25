@@ -740,10 +740,7 @@ class ASGITest(SimpleTestCase):
         await communicator.send_input({"type": "http.request"})
         # Fetch http.response.start.
         await communicator.receive_output(timeout=1)
-        # Fetch the 'first' and 'last'.
-        first_response = await communicator.receive_output(timeout=1)
-        self.assertEqual(first_response["body"], b"")
-        # Fetch the rest of the response so that coroutines are cleaned up.
+        # Fetch the closing response body (empty streaming response).
         await communicator.receive_output(timeout=1)
         with self.assertRaises(asyncio.TimeoutError):
             await communicator.receive_output(timeout=1)
